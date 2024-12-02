@@ -23,7 +23,7 @@ Add to your build:
 const zsqlite_minify = b.dependency("zsqlite-minify", .{
     .target = target,
     .optimize = optimize,
-    .minify_root_path = "./src/sqls" // Where to minify and SQL embed files from
+    .minify_root_path = @as([]const u8, "./src/sqls") // Where to minify and SQL embed files from
 });
 const zsqlite_minify_module = zsqlite_minify.module("zsqlite-minify");
 exe.root_module.addImport("zsqlite-minify", zsqlite_minify_module);
