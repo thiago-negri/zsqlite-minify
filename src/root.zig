@@ -230,3 +230,119 @@ test "minified sqls at build time" {
     try std.testing.expectEqualStrings("SELECT foo,bar FROM spam WHERE eggs>? AND eggs<?", sqls[0]);
     try std.testing.expectEqualStrings("INSERT INTO spam(foo,bar)VALUES(?,?)", sqls[1]);
 }
+
+pub const MinifiedSqlPath = struct { files: std.ArrayList([]const u8), sqls: std.ArrayList([:0]const u8) };
+
+/// Minify all SQL files in a directory (and sub directories)
+pub fn minifySqlPath(path: []const u8, alloc: std.mem.Allocator) !MinifiedSqlPath {
+    const DirInfo = struct { name: []const u8, dir: std.fs.Dir };
+    var dir_info_array = std.ArrayList(DirInfo).init(alloc);
+    defer {
+        for (dir_info_array.items) |*dir_info| {
+            alloc.free(dir_info.name);
+            dir_info.dir.close();
+        }
+        dir_info_array.deinit();
+    }
+
+    var files = std.ArrayList([]const u8).init(alloc);
+    errdefer {
+        for (files.items) |item| {
+            alloc.free(item);
+        }
+        files.deinit();
+    }
+
+    var sqls = std.ArrayList([:0]const u8).init(alloc);
+    errdefer {
+        for (sqls.items) |item| {
+            alloc.free(item);
+        }
+        sqls.deinit();
+    }
+
+    var start_dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
+    {
+        errdefer start_dir.close();
+        const name = try alloc.dupe(u8, path);
+        errdefer alloc.free(name);
+        try dir_info_array.append(DirInfo{ .name = name, .dir = start_dir });
+    }
+
+    while (dir_info_array.popOrNull()) |dir_info| {
+        var dir = dir_info.dir;
+        defer alloc.free(dir_info.name);
+        defer dir.close();
+
+        var iter = dir.iterate();
+        while (try iter.next()) |file| {
+            if (file.kind == .directory) {
+                var sub_dir = try dir.openDir(file.name, .{ .iterate = true });
+                {
+                    errdefer sub_dir.close();
+                    const name = try alloc.alloc(u8, dir_info.name.len + file.name.len + 1);
+                    errdefer alloc.free(name);
+                    std.mem.copyForwards(u8, name, dir_info.name);
+                    name[dir_info.name.len] = '/';
+                    std.mem.copyForwards(u8, name[dir_info.name.len + 1 ..], file.name);
+                    try dir_info_array.append(DirInfo{ .name = name, .dir = sub_dir });
+                }
+            }
+            if (file.kind != .file) {
+                continue;
+            }
+            const extension = ".sql";
+            if (file.name.len < extension.len + 1) {
+                continue;
+            }
+            if (!std.mem.eql(u8, file.name[file.name.len - extension.len ..], extension)) {
+                continue;
+            }
+            const stat = try dir.statFile(file.name);
+            const size = stat.size + 1; // +1 for sentinel
+            const sql = try dir.readFileAllocOptions(alloc, file.name, size, size, @alignOf(u8), 0);
+            const minified_sql = minified_sql: {
+                defer alloc.free(sql);
+                break :minified_sql try minifySql(alloc, sql);
+            };
+            {
+                errdefer alloc.free(minified_sql);
+                const name = try alloc.alloc(u8, dir_info.name.len + file.name.len + 1);
+                errdefer alloc.free(name);
+                std.mem.copyForwards(u8, name, dir_info.name);
+                name[dir_info.name.len] = '/';
+                std.mem.copyForwards(u8, name[dir_info.name.len + 1 ..], file.name);
+                try files.append(name);
+                try sqls.append(minified_sql);
+            }
+        }
+    }
+
+    const result: MinifiedSqlPath = .{ .files = files, .sqls = sqls };
+    return result;
+}
+
+/// Embed a minified SQL at comptime
+pub fn embedMinifiedSql(comptime filename: []const u8) [:0]const u8 {
+    const minified_sqls = @import("minified-sqls-path");
+
+    const filename_index = f: inline for (minified_sqls.filenames, 0..) |e, index| {
+        if (comptime std.mem.eql(u8, filename, e)) {
+            break :f index;
+        }
+    } else @compileError("filename not available");
+
+    const sql = comptime minified_sqls.sqls[filename_index];
+    return sql;
+}
+
+test "embedded files loaded through path" {
+    const foo_create = embedMinifiedSql("./src/sqls/foo/create.sql");
+    try std.testing.expectEqualStrings("CREATE TABLE foo(id INT PRIMARY KEY,name TEXT)", foo_create);
+
+    const foo_select = embedMinifiedSql("./src/sqls/foo/select.sql");
+    try std.testing.expectEqualStrings("SELECT id,name FROM foo", foo_select);
+
+    const bar_other = embedMinifiedSql("./src/sqls/bar/other.sql");
+    try std.testing.expectEqualStrings("DELETE FROM bar", bar_other);
+}

@@ -1,15 +1,29 @@
 const std = @import("std");
 
 // Export it so other projects can minify SQL as part of their builds
-pub const minifySql = @import("./src/root.zig").minifySql;
+const lib = @import("./src/root.zig");
+pub const minifySql = lib.minifySql;
+pub const minifySqlPath = lib.minifySqlPath;
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("zsqlite-minify", .{
+    const minify_root_path_desc =
+        \\The root path where all the SQL files are
+    ;
+    const minify_root_path = b.option([]const u8, "minify_root_path", minify_root_path_desc);
+
+    const zsqlite_minify_mod = b.addModule("zsqlite-minify", .{
         .root_source_file = b.path("src/root.zig"),
     });
+    if (minify_root_path) |path| {
+        const sqls_path = try minifySqlPath(path, b.allocator);
+        const mod_options = b.addOptions();
+        mod_options.addOption([]const []const u8, "filenames", sqls_path.files.items);
+        mod_options.addOption([]const [:0]const u8, "sqls", sqls_path.sqls.items);
+        zsqlite_minify_mod.addOptions("minified-sqls-path", mod_options);
+    }
 
     const mod_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/root.zig"),
@@ -38,8 +52,13 @@ pub fn build(b: *std.Build) !void {
         minified_sqls[index] = try minifySql(b.allocator, sql);
     }
 
-    const options = b.addOptions();
-    options.addOption([]const [:0]const u8, "minified_sqls", &minified_sqls);
+    const minified_sqls_test = b.addOptions();
+    minified_sqls_test.addOption([]const [:0]const u8, "minified_sqls", &minified_sqls);
+    mod_unit_tests.root_module.addImport("minified-sqls", minified_sqls_test.createModule());
 
-    mod_unit_tests.root_module.addImport("minified-sqls", options.createModule());
+    const sqls_path = try minifySqlPath("./src/sqls", b.allocator);
+    const minified_sqls_path_test = b.addOptions();
+    minified_sqls_path_test.addOption([]const []const u8, "filenames", sqls_path.files.items);
+    minified_sqls_path_test.addOption([]const [:0]const u8, "sqls", sqls_path.sqls.items);
+    mod_unit_tests.root_module.addImport("minified-sqls-path", minified_sqls_path_test.createModule());
 }

@@ -4,6 +4,9 @@ Minify SQL scripts.
 
 *Note:* This is a quick hack to minify some SQLs I use at a personal project.  It doesn't cover the entire SQL.
 
+You can pass option `minify_root_path` to the dependency.  This will automatically minify and embed all files within
+that directory.  You can grab the SQL by using `embedMinifiedSql`.
+
 
 ## Install
 
@@ -20,6 +23,7 @@ Add to your build:
 const zsqlite_minify = b.dependency("zsqlite-minify", .{
     .target = target,
     .optimize = optimize,
+    .minify_root_path = "./src/sqls" // Where to minify and SQL embed files from
 });
 const zsqlite_minify_module = zsqlite_minify.module("zsqlite-minify");
 exe.root_module.addImport("zsqlite-minify", zsqlite_minify_module);
@@ -29,21 +33,28 @@ exe.root_module.addImport("zsqlite-minify", zsqlite_minify_module);
 ## Use
 
 ```zig
-const minifySql = @import("zsqlite-minify").minifySql;
+const minify = @import("zsqlite-minify");
 
+// runtime minification
 const sql = "SELECT a, b FROM foo;";
 const alloc = ...; // how the resulting SQL will be allocated
-const minified_sql = try minifySql(alloc, sql);
+const minified_sql = try minify.minifySql(alloc, sql);
 defer alloc.free(minified_sql);
+
+// build time minification
+const built_minified_sql = minify.embedMinifiedSql("./src/sqls/foo/create.sql");
 ```
 
 
 ## Comptime
 
-Hopefully this can be done at comptime at some point.  Right now it's impossible because it uses an allocator.
+Hopefully `minifySql` can be done at comptime at some point.  Right now it's impossible because it uses an allocator.
 Check [zig#1291](https://github.com/ziglang/zig/issues/1291).
 
-What is possible is to use it during build and provide the minified SQLs as a module:
+What is possible is to use it during build and provide the minified SQLs as a module.
+
+
+## Build time alternative 1
 
 ```zig
 const minifySql = @import("zsqlite-minify").minifySql;
@@ -84,6 +95,11 @@ for (sqls) |sql| {
 }
 ```
 
-This is done by [zsqlite-migrate](https://github.com/thiago-negri/zsqlite-migrate) to embed minified SQL migrations.
 
-Also done as part of the tests in this project.
+## Build time alternative 2
+
+Use the `minify_root_path` option and `embedMinifySql` function.
+
+This is used by [zsqlite-migrate](https://github.com/thiago-negri/zsqlite-migrate) to embed minified SQL migrations.
+
+Also used as part of the tests in this project.
