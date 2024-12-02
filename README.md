@@ -95,11 +95,14 @@ for (sqls) |sql| {
 }
 ```
 
+This is used by [zsqlite-migrate](https://github.com/thiago-negri/zsqlite-migrate) to embed minified SQL migrations.
+
 
 ## Build time alternative 2
 
 Use the `minify_root_path` option and `embedMinifySql` function.
 
-This is used by [zsqlite-migrate](https://github.com/thiago-negri/zsqlite-migrate) to embed minified SQL migrations.
+This is used by [zsqlite-demo](https://github.com/thiago-negri/zsqlite-demo) to embed minified SQL statements.
 
 Also used as part of the tests in this project.
+
