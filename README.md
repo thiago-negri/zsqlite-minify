@@ -53,6 +53,8 @@ Check [zig#1291](https://github.com/ziglang/zig/issues/1291).
 
 What is possible is to use it during build and provide the minified SQLs as a module.
 
+The downside of doing it at build time is that the SQL is not in the same source file that uses it.
+
 
 ## Build time alternative 1
 
