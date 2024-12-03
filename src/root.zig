@@ -21,7 +21,7 @@ pub fn minifySql(alloc: std.mem.Allocator, sql: [:0]const u8) ![:0]const u8 {
         switch (mode) {
             .identifier => {
                 switch (char) {
-                    '0'...'9', 'A'...'Z', 'a'...'z', '_', ')', '(', ',', ';', '=', '@', '?' => {
+                    '0'...'9', 'A'...'Z', 'a'...'z', '_', ')', '(', ',', ';', '=', '@', '?', '.', '`' => {
                         // ignore
                     },
                     else => {
@@ -104,7 +104,7 @@ pub fn minifySql(alloc: std.mem.Allocator, sql: [:0]const u8) ![:0]const u8 {
             switch (first_char) {
                 // Would be awesome to extract that list into a comptime const,
                 // monitor https://github.com/ziglang/zig/issues/21507
-                ')', '(', ',', ';', '=', '!', '<', '>' => {
+                ')', '(', ',', ';', '=', '!', '<', '>', '"', '`', '\'' => {
                     // ignore
                 },
                 else => {
@@ -119,7 +119,7 @@ pub fn minifySql(alloc: std.mem.Allocator, sql: [:0]const u8) ![:0]const u8 {
 
         const last_char = item[item.len - 1];
         switch (last_char) {
-            ')', '(', ',', ';', '=', '!', '<', '>' => {
+            ')', '(', ',', ';', '=', '!', '<', '>', '"', '`', '\'' => {
                 require_space_after = false;
             },
             else => {
@@ -140,7 +140,7 @@ pub fn minifySql(alloc: std.mem.Allocator, sql: [:0]const u8) ![:0]const u8 {
         if (current_index > 0) {
             const first_char = item[0];
             switch (first_char) {
-                ')', '(', ',', ';', '=', '!', '<', '>' => {
+                ')', '(', ',', ';', '=', '!', '<', '>', '"', '`', '\'' => {
                     // ignore
                 },
                 else => {
@@ -157,7 +157,7 @@ pub fn minifySql(alloc: std.mem.Allocator, sql: [:0]const u8) ![:0]const u8 {
 
         const last_char = item[item.len - 1];
         switch (last_char) {
-            ')', '(', ',', ';', '=', '!', '<', '>' => {
+            ')', '(', ',', ';', '=', '!', '<', '>', '"', '`', '\'' => {
                 require_space_after = false;
             },
             else => {
@@ -218,6 +218,42 @@ test "minified sqls at run time" {
             \\ VALUES          (   ?,   ? );
         ;
         const expect = "INSERT INTO spam(foo,bar)VALUES(?,?)";
+
+        const actual = try minifySql(alloc, sql);
+        defer alloc.free(actual);
+        try std.testing.expectEqualStrings(expect, actual);
+    }
+
+    {
+        const sql =
+            \\SELECT foo
+            \\  FROM bar
+            \\ WHERE EXISTS (
+            \\       SELECT 1
+            \\          FROM zoo
+            \\          WHERE zoo.id = bar.id
+            \\                AND zoo.type = ?
+            \\ );
+        ;
+        const expect = "SELECT foo FROM bar WHERE EXISTS(SELECT 1 FROM zoo WHERE zoo.id=bar.id AND zoo.type=?)";
+
+        const actual = try minifySql(alloc, sql);
+        defer alloc.free(actual);
+        try std.testing.expectEqualStrings(expect, actual);
+    }
+
+    {
+        const sql =
+            \\SELECT `foo`
+            \\  FROM "bar"
+            \\ WHERE EXISTS (
+            \\       SELECT 1
+            \\          FROM "zoo"
+            \\          WHERE `zoo`."id" = "bar".`id`
+            \\                AND zoo."type" = ?
+            \\ );
+        ;
+        const expect = "SELECT`foo`FROM\"bar\"WHERE EXISTS(SELECT 1 FROM\"zoo\"WHERE`zoo`.\"id\"=\"bar\".`id`AND zoo.\"type\"=?)";
 
         const actual = try minifySql(alloc, sql);
         defer alloc.free(actual);
