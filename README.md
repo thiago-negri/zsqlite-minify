@@ -24,7 +24,7 @@ const zsqlite_minify = b.dependency("zsqlite-minify", .{
     .target = target,
     .optimize = optimize,
     .minify_root_path = @as([]const u8, "./src/sqls") // Where to minify and SQL embed files from
-    .minify_files_prefix = @as([]const u8, "sqls/") // Prefix to all embedded files, good to enable 'gf' in VIM
+    .minify_files_prefix = @as([]const u8, "sqls") // Prefix to all embedded files, good to enable 'gf' in VIM
 });
 const zsqlite_minify_module = zsqlite_minify.module("zsqlite-minify");
 exe.root_module.addImport("zsqlite-minify", zsqlite_minify_module);
