@@ -42,7 +42,7 @@ const minified_sql = try minify.minifySql(alloc, sql);
 defer alloc.free(minified_sql);
 
 // build time minification
-const built_minified_sql = minify.embedMinifiedSql("./src/sqls/foo/create.sql");
+const built_minified_sql = minify.embedMinifiedSql("sqls/foo/create.sql");
 ```
 
 
@@ -62,7 +62,6 @@ The downside of doing it at build time is that the SQL is not in the same source
 const minifySql = @import("zsqlite-minify").minifySql;
 
 pub fn build(b: *std.Build) !void {
-    // zig fmt: off
     const sqls: []const [:0]const u8 = &[_][:0]const u8{
         \\SELECT foo, bar
         \\ FROM spam
@@ -72,7 +71,6 @@ pub fn build(b: *std.Build) !void {
         \\INSERT INTO spam ( foo, bar )
         \\ VALUES          (   ?,   ? );
     };
-    // zig fmt: on
     const sqls_len = comptime sqls.len;
     var minified_sqls: [sqls_len][:0]const u8 = undefined;
     for (sqls, 0..) |sql, index| {

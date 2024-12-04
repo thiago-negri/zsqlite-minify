@@ -1,6 +1,7 @@
 const std = @import("std");
+const assert = std.debug.assert;
 
-// Export it so other projects can minify SQL as part of their builds
+// Export it on build so other projects can minify SQL as part of their builds
 const lib = @import("./src/root.zig");
 pub const minifySql = lib.minifySql;
 pub const minifySqlPath = lib.minifySqlPath;
@@ -9,15 +10,14 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const minify_root_path_desc =
-        \\The root path where all the SQL files are
-    ;
-    const minify_root_path = b.option([]const u8, "minify_root_path", minify_root_path_desc);
+    const build_options = .{
+        .minify_root_path = b.option([]const u8, "minify_root_path", "The root path where all the SQL files are"),
+    };
 
     const zsqlite_minify_mod = b.addModule("zsqlite-minify", .{
         .root_source_file = b.path("src/root.zig"),
     });
-    if (minify_root_path) |path| {
+    if (build_options.minify_root_path) |path| {
         const sqls_path = try minifySqlPath(path, b.allocator);
         const mod_options = b.addOptions();
         mod_options.addOption([]const []const u8, "filenames", sqls_path.files.items);
@@ -35,7 +35,6 @@ pub fn build(b: *std.Build) !void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_mod_unit_tests.step);
 
-    // zig fmt: off
     const sqls: []const [:0]const u8 = &[_][:0]const u8{
         \\SELECT foo, bar
         \\ FROM spam
@@ -45,7 +44,6 @@ pub fn build(b: *std.Build) !void {
         \\INSERT INTO spam ( foo, bar )
         \\ VALUES          (   ?,   ? );
     };
-    // zig fmt: on
     const sqls_len = comptime sqls.len;
     var minified_sqls: [sqls_len][:0]const u8 = undefined;
     for (sqls, 0..) |sql, index| {
@@ -56,7 +54,7 @@ pub fn build(b: *std.Build) !void {
     minified_sqls_test.addOption([]const [:0]const u8, "minified_sqls", &minified_sqls);
     mod_unit_tests.root_module.addImport("minified-sqls", minified_sqls_test.createModule());
 
-    const sqls_path = try minifySqlPath("./src/sqls", b.allocator);
+    const sqls_path = try minifySqlPath("./src/", b.allocator);
     const minified_sqls_path_test = b.addOptions();
     minified_sqls_path_test.addOption([]const []const u8, "filenames", sqls_path.files.items);
     minified_sqls_path_test.addOption([]const [:0]const u8, "sqls", sqls_path.sqls.items);
