@@ -271,12 +271,12 @@ test "minified sqls at build time" {
 pub const MinifiedSqlPath = struct { files: std.ArrayList([]const u8), sqls: std.ArrayList([:0]const u8) };
 
 /// Minify all SQL files in a directory (and sub directories)
-pub fn minifySqlPath(path: []const u8, alloc: std.mem.Allocator) !MinifiedSqlPath {
-    const DirInfo = struct { name: ?[]const u8, dir: std.fs.Dir };
+pub fn minifySqlPath(path: []const u8, prefix: []const u8, alloc: std.mem.Allocator) !MinifiedSqlPath {
+    const DirInfo = struct { name: []const u8, dir: std.fs.Dir };
     var dir_info_array = std.ArrayList(DirInfo).init(alloc);
     defer {
         for (dir_info_array.items) |*dir_info| {
-            if (dir_info.name) |name| alloc.free(name);
+            alloc.free(dir_info.name);
             dir_info.dir.close();
         }
         dir_info_array.deinit();
@@ -301,12 +301,14 @@ pub fn minifySqlPath(path: []const u8, alloc: std.mem.Allocator) !MinifiedSqlPat
     var start_dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
     {
         errdefer start_dir.close();
-        try dir_info_array.append(DirInfo{ .name = null, .dir = start_dir });
+        const name = try alloc.dupe(u8, prefix);
+        errdefer alloc.free(name);
+        try dir_info_array.append(DirInfo{ .name = name, .dir = start_dir });
     }
 
     while (dir_info_array.popOrNull()) |dir_info| {
         var dir = dir_info.dir;
-        defer if (dir_info.name) |name| alloc.free(name);
+        defer alloc.free(dir_info.name);
         defer dir.close();
 
         var iter = dir.iterate();
@@ -315,20 +317,8 @@ pub fn minifySqlPath(path: []const u8, alloc: std.mem.Allocator) !MinifiedSqlPat
                 var sub_dir = try dir.openDir(file.name, .{ .iterate = true });
                 {
                     errdefer sub_dir.close();
-
-                    const name = blk: {
-                        if (dir_info.name) |name| {
-                            const new_name = try alloc.alloc(u8, name.len + file.name.len + 1);
-                            errdefer alloc.free(new_name);
-                            std.mem.copyForwards(u8, new_name, name);
-                            new_name[name.len] = '/';
-                            std.mem.copyForwards(u8, new_name[name.len + 1 ..], file.name);
-                            break :blk new_name;
-                        }
-                        break :blk try alloc.dupe(u8, file.name);
-                    };
+                    const name = try allocFilename(alloc, dir_info.name, file.name);
                     errdefer alloc.free(name);
-
                     try dir_info_array.append(DirInfo{ .name = name, .dir = sub_dir });
                 }
             }
@@ -344,35 +334,38 @@ pub fn minifySqlPath(path: []const u8, alloc: std.mem.Allocator) !MinifiedSqlPat
             }
             const stat = try dir.statFile(file.name);
             const size = stat.size + 1; // +1 for sentinel
-            const sql = try dir.readFileAllocOptions(alloc, file.name, size, size, @alignOf(u8), 0);
-            const minified_sql = minified_sql: {
+            const minified_sql = blk: {
+                const sql = try dir.readFileAllocOptions(alloc, file.name, size, size, @alignOf(u8), 0);
                 defer alloc.free(sql);
-                break :minified_sql try minifySql(alloc, sql);
+                break :blk try minifySql(alloc, sql);
             };
             {
                 errdefer alloc.free(minified_sql);
-
-                const name = blk: {
-                    if (dir_info.name) |name| {
-                        const new_name = try alloc.alloc(u8, name.len + file.name.len + 1);
-                        errdefer alloc.free(new_name);
-                        std.mem.copyForwards(u8, new_name, name);
-                        new_name[name.len] = '/';
-                        std.mem.copyForwards(u8, new_name[name.len + 1 ..], file.name);
-                        break :blk new_name;
-                    }
-                    break :blk try alloc.dupe(u8, file.name);
-                };
-                errdefer alloc.free(name);
-
-                try files.append(name);
                 try sqls.append(minified_sql);
+            }
+            const name = try allocFilename(alloc, dir_info.name, file.name);
+            {
+                errdefer alloc.free(name);
+                try files.append(name);
             }
         }
     }
 
     const result: MinifiedSqlPath = .{ .files = files, .sqls = sqls };
     return result;
+}
+
+fn allocFilename(alloc: std.mem.Allocator, parent: []const u8, child: []const u8) std.mem.Allocator.Error![]const u8 {
+    if (parent.len <= 0)
+        return try alloc.dupe(u8, child);
+
+    const total_len = parent.len + child.len + 1;
+    const name = try alloc.alloc(u8, total_len);
+    errdefer alloc.free(name);
+    std.mem.copyForwards(u8, name, parent);
+    name[parent.len] = '/';
+    std.mem.copyForwards(u8, name[parent.len + 1 ..], child);
+    return name;
 }
 
 /// Embed a minified SQL at comptime

@@ -12,13 +12,18 @@ pub fn build(b: *std.Build) !void {
 
     const build_options = .{
         .minify_root_path = b.option([]const u8, "minify_root_path", "The root path where all the SQL files are"),
+        .minify_files_prefix = b.option(
+            []const u8,
+            "minify_files_prefix",
+            "A prefix to add to all your SQL files references, useful to 'gf' the file in VIM",
+        ) orelse "",
     };
 
     const zsqlite_minify_mod = b.addModule("zsqlite-minify", .{
         .root_source_file = b.path("src/root.zig"),
     });
     if (build_options.minify_root_path) |path| {
-        const sqls_path = try minifySqlPath(path, b.allocator);
+        const sqls_path = try minifySqlPath(path, build_options.minify_files_prefix, b.allocator);
         const mod_options = b.addOptions();
         mod_options.addOption([]const []const u8, "filenames", sqls_path.files.items);
         mod_options.addOption([]const [:0]const u8, "sqls", sqls_path.sqls.items);
@@ -54,7 +59,7 @@ pub fn build(b: *std.Build) !void {
     minified_sqls_test.addOption([]const [:0]const u8, "minified_sqls", &minified_sqls);
     mod_unit_tests.root_module.addImport("minified-sqls", minified_sqls_test.createModule());
 
-    const sqls_path = try minifySqlPath("./src/", b.allocator);
+    const sqls_path = try minifySqlPath("./src/", "", b.allocator);
     const minified_sqls_path_test = b.addOptions();
     minified_sqls_path_test.addOption([]const []const u8, "filenames", sqls_path.files.items);
     minified_sqls_path_test.addOption([]const [:0]const u8, "sqls", sqls_path.sqls.items);
